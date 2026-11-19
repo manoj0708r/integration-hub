@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 @Repository
 public interface OrderRepository extends JpaRepository<Order, String> {
 
@@ -18,4 +20,6 @@ public interface OrderRepository extends JpaRepository<Order, String> {
             WHERE o.orderId = :orderId
             """)
     void updateStatus(String orderId, OrderStatus status);
+
+    List<Order> findByExportedFalse();
 }
