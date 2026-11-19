@@ -1,0 +1,23 @@
+{
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "url": "/payments/authorise",
+    "bodyPatterns": [
+      {
+        "contains": "CUST-SLOW"
+      }
+    ]
+  },
+  "response": {
+    "fixedDelayMilliseconds": 15000,
+    "status": 200,
+    "jsonBody": {
+      "authorised": true,
+      "transactionId": "TXN-SLOW"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

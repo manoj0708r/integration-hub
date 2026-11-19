@@ -1,0 +1,22 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "url": "/inventory/reserve",
+    "bodyPatterns": [
+      {
+        "contains": "SKU-OUT-OF-STOCK"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "reserved": false,
+      "reason": "Insufficient stock"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

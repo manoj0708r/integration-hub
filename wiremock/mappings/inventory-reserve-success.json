@@ -1,0 +1,17 @@
+{
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "url": "/inventory/reserve"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "reserved": true,
+      "reason": "Stock reserved"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

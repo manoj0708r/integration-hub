@@ -1,0 +1,54 @@
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/orderdb;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+  endpoint:
+    health:
+      show-details: always
+
+hub:
+  inventory-url: http://localhost:8089
+  payment-url: http://localhost:8089
+
+  api-key: ${HUB_API_KEY:local-dev-key}
+
+resilience4j:
+
+  retry:
+    instances:
+      payment:
+        max-attempts: 3
+        wait-duration: 1s
+
+  circuitbreaker:
+    instances:
+      payment:
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+
+  timelimiter:
+    instances:
+      payment:
+        timeout-duration: 5s
+
+

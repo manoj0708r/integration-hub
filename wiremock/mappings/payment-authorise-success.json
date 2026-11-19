@@ -1,0 +1,17 @@
+{
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "url": "/payments/authorise"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "authorised": true,
+      "transactionId": "TXN-10001"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}
