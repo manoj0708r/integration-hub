@@ -9,9 +9,10 @@ import com.aspire.poc.integration_hub.client.dto.PaymentRequest;
 import com.aspire.poc.integration_hub.client.dto.PaymentResponse;
 import com.aspire.poc.integration_hub.domain.entity.Order;
 import com.aspire.poc.integration_hub.domain.enums.OrderStatus;
+import com.aspire.poc.integration_hub.messaging.dto.ShipmentRequestedEvent;
+import com.aspire.poc.integration_hub.messaging.publisher.ShipmentPublisher;
 import com.aspire.poc.integration_hub.repository.OrderRepository;
 import com.aspire.poc.integration_hub.service.AuditService;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,8 @@ public class OrderOrchestrationService {
     private final PaymentClient paymentClient;
 
     private final AuditService auditService;
+
+    private final ShipmentPublisher shipmentPublisher;
 
     public void process(Order order, CreateOrderRequest request) {
 
@@ -72,7 +75,21 @@ public class OrderOrchestrationService {
         orderRepository.save(order);
 
         auditService.audit(order.getOrderId(), "PAYMENT", "SUCCESS", "LOCAL");
+
+        shipmentPublisher.publish(
+
+                new ShipmentRequestedEvent(
+
+                        order.getOrderId(),
+
+                        order.getCustomerId(),
+
+                        order.getCorrelationId()));
+
+        order.setStatus(OrderStatus.SHIPMENT_REQUESTED);
+
+        orderRepository.save(order);
+
+        auditService.audit(order.getOrderId(), "SHIPMENT", "REQUESTED", "ARTEMIS");
     }
-
-
 }
