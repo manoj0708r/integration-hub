@@ -21,6 +21,6 @@ public class OpenApiConfig {
                 This API supports order creation with
                 idempotency handling and order retrieval.
                 """).version("1.0.0").contact(new Contact().name("Integration Hub Development Team")
-                        .email("support@example.com")).license(new License().name("Internal API")));
+                        .email("helpdesk@aspiresys.com")).license(new License().name("Internal API")));
     }
 }

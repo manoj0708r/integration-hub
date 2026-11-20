@@ -9,6 +9,10 @@ public class OrderIdGenerator {
 
     public String nextId() {
 
-        return "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        return "ORD-" + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                .substring(0, 12)
+                .toUpperCase();
     }
 }

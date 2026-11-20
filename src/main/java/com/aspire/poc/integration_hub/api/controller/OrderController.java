@@ -21,83 +21,54 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
 @Tag(
-        name = "Order Management",
-        description = """
-                Order Fulfilment Integration Hub APIs.
-
-                Supports:
-                - Order Creation
-                - Order Retrieval
-                - Idempotency Handling
-                - Inventory Reservation
-                - Payment Authorisation
-                - Compensation Flow
-                - Audit Trail Tracking
-                """
+        name = "Orders",
+        description = "APIs for creating and retrieving customer orders."
 )
 public class OrderController {
 
     private final OrderService orderService;
 
     @Operation(
-            summary = "Create Order",
-            description = """
-                    Creates a new customer order.
-
-                    Processing Flow:
-
-                    RECEIVED
-                        ↓
-                    INVENTORY_RESERVE
-                        ↓
-                    PAYMENT_AUTHORISE
-                        ↓
-                    PAYMENT_AUTHORISED
-
-                    Failure Flows:
-
-                    Inventory Failure
-                        ↓
-                    REJECTED
-
-                    Payment Failure
-                        ↓
-                    INVENTORY_RELEASE
-                        ↓
-                    PAYMENT_FAILED
-
-                    Duplicate requests are handled through the
-                    Idempotency-Key header.
-                    """
+            summary = "Create an order",
+            description = "Creates an order and initiates inventory reservation and payment authorization."
     )
     @ApiResponses({
             @ApiResponse(
                     responseCode = "202",
-                    description = "Order processed successfully",
+                    description = "Order accepted successfully",
                     content = @Content(
-                            schema =
-                            @Schema(
-                                    implementation =
-                                            CreateOrderResponse.class
-                            )
+                            schema = @Schema(implementation = CreateOrderResponse.class)
                     )
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Validation failure"
+                    description = "Invalid request",
+                    content = @Content
             ),
             @ApiResponse(
                     responseCode = "401",
-                    description = "Invalid API key"
+                    description = "Unauthorized",
+                    content = @Content
             ),
             @ApiResponse(
-                    responseCode = "503",
-                    description =
-                            "Inventory or Payment service unavailable"
+                    responseCode = "422",
+                    description = "Inventory reservation failed",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "502",
+                    description = "Payment authorization failed",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "504",
+                    description = "Payment service timeout",
+                    content = @Content
             ),
             @ApiResponse(
                     responseCode = "500",
-                    description = "Internal server error"
+                    description = "Internal server error",
+                    content = @Content
             )
     })
     @PostMapping
@@ -105,35 +76,23 @@ public class OrderController {
 
             @Parameter(
                     name = "X-API-Key",
-                    description =
-                            "API Key configured in application.yml",
-                    required = true,
+                    description = "API authentication key",
                     in = ParameterIn.HEADER,
+                    required = true,
                     example = "local-dev-key"
             )
             @RequestHeader("X-API-Key")
             String apiKey,
 
-            @Parameter(
-                    name = "X-Correlation-Id",
-                    description =
-                            "Optional correlation identifier used for distributed tracing",
-                    required = false,
-                    in = ParameterIn.HEADER,
-                    example = "CORR-123456"
-            )
-            @RequestHeader(
-                    value = "X-Correlation-Id",
-                    required = false
-            )
+            @Parameter(hidden = true)
+            @RequestAttribute("correlationId")
             String correlationId,
 
             @Parameter(
                     name = "Idempotency-Key",
-                    description =
-                            "Unique key used to prevent duplicate order submissions",
-                    required = true,
+                    description = "Unique key to prevent duplicate order creation",
                     in = ParameterIn.HEADER,
+                    required = true,
                     example = "ORDER-REQ-001"
             )
             @RequestHeader("Idempotency-Key")
@@ -143,51 +102,41 @@ public class OrderController {
             @RequestBody
             CreateOrderRequest request
     ) {
+        CreateOrderResponse response = orderService.createOrder(
+                request,
+                idempotencyKey,
+                correlationId
+        );
 
-        return ResponseEntity.accepted()
-                .body(
-                        orderService.createOrder(
-                                request,
-                                idempotencyKey, correlationId
-                        )
-                );
+        return ResponseEntity.accepted().body(response);
     }
 
-
     @Operation(
-            summary = "Get Order Details",
-            description = """
-                    Retrieve an order and complete audit trail.
-
-                    Audit Trail Contains:
-
-                    - ORDER_CREATED
-                    - INVENTORY
-                    - INVENTORY_RELEASE
-                    - PAYMENT
-
-                    along with timestamps and outcomes.
-                    """
+            summary = "Get order by ID",
+            description = "Retrieves order details using the order identifier."
     )
     @ApiResponses({
             @ApiResponse(
                     responseCode = "200",
-                    description = "Order found",
+                    description = "Order retrieved successfully",
                     content = @Content(
-                            schema =
-                            @Schema(
-                                    implementation =
-                                            OrderResponse.class
-                            )
+                            schema = @Schema(implementation = OrderResponse.class)
                     )
             ),
             @ApiResponse(
                     responseCode = "401",
-                    description = "Invalid API key"
+                    description = "Unauthorized",
+                    content = @Content
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "Order not found"
+                    description = "Order not found",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Internal server error",
+                    content = @Content
             )
     })
     @GetMapping("/{id}")
@@ -195,24 +144,23 @@ public class OrderController {
 
             @Parameter(
                     name = "X-API-Key",
-                    description =
-                            "API Key configured in application.yml",
-                    required = true,
+                    description = "API authentication key",
                     in = ParameterIn.HEADER,
+                    required = true,
                     example = "local-dev-key"
             )
             @RequestHeader("X-API-Key")
             String apiKey,
 
             @Parameter(
-                    description = "Unique Order Identifier",
+                    description = "Order identifier",
                     required = true,
                     example = "ORD-B683A0F0"
             )
-            @PathVariable
+            @PathVariable("id")
             String id
     ) {
-
         return orderService.getOrder(id);
     }
 }
+
