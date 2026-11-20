@@ -1,3 +1,4 @@
+
 package com.aspire.poc.integration_hub.service;
 
 import com.aspire.poc.integration_hub.api.dto.AuditResponse;
@@ -12,8 +13,8 @@ import com.aspire.poc.integration_hub.repository.OrderAuditRepository;
 import com.aspire.poc.integration_hub.repository.OrderRepository;
 import com.aspire.poc.integration_hub.service.impl.OrderOrchestrationService;
 import com.aspire.poc.integration_hub.util.OrderIdGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,18 +23,14 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
     private final OrderRepository orderRepository;
-
     private final OrderAuditRepository auditRepository;
-
     private final IdempotencyService idempotencyService;
-
     private final AuditService auditService;
-
     private final OrderIdGenerator orderIdGenerator;
-
     private final OrderOrchestrationService orderOrchestrationService;
 
     @Transactional
@@ -42,19 +39,39 @@ public class OrderService {
             String idempotencyKey,
             String correlationId) {
 
-        var existing = idempotencyService.findByKey(idempotencyKey);
+        log.info(
+                "Received order creation request. customerId={}, correlationId={}",
+                request.customerId(),
+                correlationId
+        );
 
-        if (existing.isPresent()) {
+        // Check existing idempotency record
+        var existingOrderId = idempotencyService.findByKey(idempotencyKey);
 
-            Order order = orderRepository.findById(existing.get()).orElseThrow(() -> new OrderNotFoundException(existing.get()));
+        if (existingOrderId.isPresent()) {
 
-            return new CreateOrderResponse(order.getOrderId(), order.getStatus().name(),  order.getCorrelationId());
+            String existingId = existingOrderId.get();
+
+            Order existingOrder = orderRepository.findById(existingId)
+                    .orElseThrow(() -> new OrderNotFoundException(existingId));
+
+            log.info(
+                    "Duplicate request detected. Returning existing order. orderId={}",
+                    existingId
+            );
+
+            return new CreateOrderResponse(
+                    existingOrder.getOrderId(),
+                    existingOrder.getStatus().name(),
+                    existingOrder.getCorrelationId()
+            );
         }
 
+        // Generate order ID
         String orderId = orderIdGenerator.nextId();
-
         LocalDateTime now = LocalDateTime.now();
 
+        // Create order
         Order order = Order.builder()
                 .orderId(orderId)
                 .customerId(request.customerId())
@@ -67,6 +84,7 @@ public class OrderService {
                 .updatedAt(now)
                 .build();
 
+        // Add order items
         request.items().forEach(itemRequest -> {
 
             OrderItem orderItem = OrderItem.builder()
@@ -79,26 +97,74 @@ public class OrderService {
             order.getItems().add(orderItem);
         });
 
-        Order savedOrder = orderRepository.save(order);
+        // Save order
+        orderRepository.save(order);
 
+        log.info("Order created successfully. orderId={}", orderId);
+
+        // Save idempotency record
         idempotencyService.save(idempotencyKey, orderId);
 
-        auditService.audit(orderId, "ORDER_CREATED", "SUCCESS", "LOCAL");
+        // Record order creation audit
+        auditService.audit(
+                orderId,
+                "ORDER_CREATED",
+                "SUCCESS",
+                correlationId
+        );
 
-        orderOrchestrationService.process(savedOrder, request);
+        // Start orchestration
+        orderOrchestrationService.process(order, request);
 
-        Order processedOrder = orderRepository.findById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
+        // Retrieve latest persisted order
+        Order processedOrder = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException(orderId));
 
-        return new CreateOrderResponse(processedOrder.getOrderId(), processedOrder.getStatus().name(), processedOrder.getCorrelationId());
+        log.info(
+                "Order processing completed. orderId={}, status={}, correlationId={}",
+                processedOrder.getOrderId(),
+                processedOrder.getStatus(),
+                processedOrder.getCorrelationId()
+        );
+
+        return new CreateOrderResponse(
+                processedOrder.getOrderId(),
+                processedOrder.getStatus().name(),
+                processedOrder.getCorrelationId()
+        );
     }
+
 
     public OrderResponse getOrder(String orderId) {
 
-        Order order = orderRepository.findById(orderId).orElseThrow(() -> new OrderNotFoundException(orderId));
+        log.info("Fetching order details. orderId={}", orderId);
 
-        List<AuditResponse> audits = auditRepository.findByOrderIdOrderByCreatedAtAsc(orderId).stream()
-                .map(x -> new AuditResponse(x.getStep(), x.getOutcome(), x.getCreatedAt())).toList();
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> {
+                    log.warn("Order not found. orderId={}", orderId);
+                    return new OrderNotFoundException(orderId);
+                });
 
-        return new OrderResponse(order.getOrderId(), order.getCustomerId(), order.getStatus().name(), audits);
+        List<AuditResponse> audits = auditRepository
+                .findByOrderIdOrderByCreatedAtAsc(orderId)
+                .stream()
+                .map(audit -> new AuditResponse(
+                        audit.getStep(),
+                        audit.getOutcome(),
+                        audit.getCreatedAt()
+                ))
+                .toList();
+
+        log.info(
+                "Order details retrieved successfully. orderId={}",
+                orderId
+        );
+
+        return new OrderResponse(
+                order.getOrderId(),
+                order.getCustomerId(),
+                order.getStatus().name(),
+                audits
+        );
     }
 }

@@ -1,0 +1,2 @@
+orderId,customerId,status,correlationId
+ORD-820A345A4F45,CUST-FAIL,PAYMENT_FAILED,e6acc461-0777-40cc-88ab-0c04a05b3af9

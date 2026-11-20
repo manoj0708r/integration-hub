@@ -30,7 +30,7 @@ hub:
   inventory-url: http://localhost:8089
   payment-url: http://localhost:8089
 
-  api-key: ${HUB_API_KEY:local-dev-key}
+  api-key: ${HUB_API_KEY:Aspire-POC}
 
 resilience4j:
 

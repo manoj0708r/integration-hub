@@ -14,82 +14,154 @@ import com.aspire.poc.integration_hub.messaging.publisher.ShipmentPublisher;
 import com.aspire.poc.integration_hub.repository.OrderRepository;
 import com.aspire.poc.integration_hub.service.AuditService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
+@Slf4j
 public class OrderOrchestrationService {
 
     private final OrderRepository orderRepository;
-
     private final InventoryClient inventoryClient;
-
     private final PaymentClient paymentClient;
-
     private final AuditService auditService;
-
     private final ShipmentPublisher shipmentPublisher;
 
     public void process(Order order, CreateOrderRequest request) {
 
-        InventoryResponse inventoryResponse = inventoryClient.reserve(new InventoryRequest(order.getOrderId(), request.items()));
+        String orderId = order.getOrderId();
+        String correlationId = order.getCorrelationId();
+
+        log.info(
+                "Starting order orchestration. orderId={}, correlationId={}",
+                orderId, correlationId
+        );
+
+        // Step 1: Reserve inventory
+        log.info("Requesting inventory reservation. orderId={}", orderId);
+
+        InventoryResponse inventoryResponse =
+                inventoryClient.reserve(
+                        new InventoryRequest(orderId, request.items())
+                );
 
         if (!inventoryResponse.reserved()) {
 
             order.setStatus(OrderStatus.REJECTED);
-
             orderRepository.save(order);
 
-            auditService.audit(order.getOrderId(), "INVENTORY", "REJECTED", "LOCAL");
+            auditService.audit(
+                    orderId,
+                    "INVENTORY",
+                    "REJECTED",
+                    correlationId
+            );
+
+            log.warn(
+                    "Order rejected because inventory reservation failed. orderId={}",
+                    orderId
+            );
 
             return;
         }
 
         order.setStatus(OrderStatus.STOCK_RESERVED);
-
         orderRepository.save(order);
 
-        auditService.audit(order.getOrderId(), "INVENTORY", "SUCCESS", "LOCAL");
+        auditService.audit(
+                orderId,
+                "INVENTORY",
+                "SUCCESS",
+                correlationId
+        );
 
-        PaymentResponse paymentResponse = paymentClient.authorise(new PaymentRequest(order.getOrderId(), request.customerId(), request.totalAmount()));
+        log.info("Inventory successfully reserved. orderId={}", orderId);
+
+        // Step 2: Authorize payment
+        log.info("Requesting payment authorization. orderId={}", orderId);
+
+        PaymentResponse paymentResponse =
+                paymentClient.authorise(
+                        new PaymentRequest(
+                                orderId,
+                                request.customerId(),
+                                request.totalAmount()
+                        )
+                );
 
         if (!paymentResponse.authorised()) {
 
-            inventoryClient.release(new InventoryRequest(order.getOrderId(), request.items()));
+            log.warn(
+                    "Payment authorization failed. Starting inventory compensation. orderId={}",
+                    orderId
+            );
 
-            auditService.audit(order.getOrderId(), "INVENTORY_RELEASE", "SUCCESS", "LOCAL");
+            // Compensation: Release reserved inventory
+            inventoryClient.release(
+                    new InventoryRequest(orderId, request.items())
+            );
+
+            auditService.audit(
+                    orderId,
+                    "INVENTORY_RELEASE",
+                    "SUCCESS",
+                    correlationId
+            );
 
             order.setStatus(OrderStatus.PAYMENT_FAILED);
-
             orderRepository.save(order);
 
-            auditService.audit(order.getOrderId(), "PAYMENT", "FAILED", "LOCAL");
+            auditService.audit(
+                    orderId,
+                    "PAYMENT",
+                    "FAILED",
+                    correlationId
+            );
+
+            log.warn(
+                    "Payment failed and inventory compensation completed. orderId={}",
+                    orderId
+            );
 
             return;
         }
 
         order.setStatus(OrderStatus.PAYMENT_AUTHORISED);
-
         orderRepository.save(order);
 
-        auditService.audit(order.getOrderId(), "PAYMENT", "SUCCESS", "LOCAL");
+        auditService.audit(
+                orderId,
+                "PAYMENT",
+                "SUCCESS",
+                correlationId
+        );
 
-        shipmentPublisher.publish(
+        log.info("Payment successfully authorized. orderId={}", orderId);
 
+        // Step 3: Publish shipment request
+        ShipmentRequestedEvent event =
                 new ShipmentRequestedEvent(
-
-                        order.getOrderId(),
-
+                        orderId,
                         order.getCustomerId(),
+                        correlationId
+                );
 
-                        order.getCorrelationId()));
+        shipmentPublisher.publish(event);
 
         order.setStatus(OrderStatus.SHIPMENT_REQUESTED);
-
         orderRepository.save(order);
 
-        auditService.audit(order.getOrderId(), "SHIPMENT", "REQUESTED", "ARTEMIS");
+        auditService.audit(
+                orderId,
+                "SHIPMENT",
+                "REQUESTED",
+                correlationId
+        );
+
+        log.info(
+                "Shipment request published successfully. orderId={}, correlationId={}",
+                orderId, correlationId
+        );
     }
 }
